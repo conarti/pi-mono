@@ -3713,5 +3713,130 @@ describe("Editor component", () => {
 			assert.ok(allContent.includes("first line"), "First line of ghost text should be shown");
 			assert.ok(!allContent.includes("second line"), "Subsequent lines should not be rendered inline");
 		});
+
+		it("accepts ghost text and submits on Enter", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("run the tests");
+			editor.setGhostTextProvider(provider);
+
+			// Ghost text appears in empty editor (like prompt suggestion)
+			editor.handleInput("x");
+			await flushGhostText();
+			// Clear editor and set ghost text directly for clean test
+			editor.setText("");
+			editor.setGhostTextProvider(createMockProvider("run the tests"));
+			editor.handleInput("r");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "run the tests");
+
+			let submitted: string | undefined;
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			// Enter should accept ghost text AND submit
+			editor.handleInput("\r");
+			assert.strictEqual(submitted, "rrun the tests", "Enter should accept ghost text and submit");
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("accepts ghost text into editor on Arrow Right at end of line", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider(" world");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), " world");
+
+			let submitted: string | undefined;
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			// Arrow Right at end of line should accept ghost text but NOT submit
+			editor.handleInput("\x1b[C"); // Right arrow
+			assert.strictEqual(editor.getText(), "hello world");
+			assert.strictEqual(editor.getGhostText(), null);
+			assert.strictEqual(submitted, undefined, "Arrow Right should not submit");
+		});
+
+		it("does not accept ghost text on Arrow Right when cursor is not at end", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.setText("hello");
+			// Move cursor to middle
+			editor.handleInput("\x1b[D"); // Left arrow
+			editor.handleInput("\x1b[D"); // Left arrow
+
+			// Manually set ghost text (since cursor moved)
+			editor.handleInput("x");
+			await flushGhostText();
+
+			const cursorBefore = editor.getCursor();
+
+			// Arrow Right should just move cursor, not accept ghost text
+			editor.handleInput("\x1b[C"); // Right arrow
+			const cursorAfter = editor.getCursor();
+
+			assert.strictEqual(cursorAfter.col, cursorBefore.col + 1, "Cursor should move right normally");
+			// Ghost text may or may not be cleared, but text should not include suggestion
+			assert.ok(!editor.getText().includes("suggestion"), "Ghost text should not be inserted");
+		});
+
+		it("submits ghost text on Enter in empty editor (prompt suggestion)", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+
+			// Simulate prompt suggestion: ghost text in empty editor
+			const provider = createMockProvider("fix the failing tests");
+			editor.setGhostTextProvider(provider);
+
+			// Trigger ghost text (need some input to trigger schedule)
+			editor.handleInput("f");
+			await flushGhostText();
+			// Now set up a clean state with ghost text in nearly-empty editor
+			assert.strictEqual(editor.getGhostText(), "fix the failing tests");
+
+			let submitted: string | undefined;
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			// Enter should accept and submit
+			editor.handleInput("\r");
+			assert.strictEqual(submitted, "ffix the failing tests");
+		});
+
+		it("does not accept ghost text on Enter when disableSubmit is true", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("x");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "suggestion");
+
+			editor.disableSubmit = true;
+
+			let submitted: string | undefined;
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			editor.handleInput("\r");
+			// Should not submit when disableSubmit is true
+			assert.strictEqual(submitted, undefined, "Should not submit when disableSubmit is true");
+		});
 	});
 });

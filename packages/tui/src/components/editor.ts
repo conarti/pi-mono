@@ -457,6 +457,12 @@ export class Editor implements Component, Focusable {
 		return currentVisualLine === 0;
 	}
 
+	private isCursorAtEnd(): boolean {
+		const lastLine = this.state.lines.length - 1;
+		if (this.state.cursorLine !== lastLine) return false;
+		return this.state.cursorCol >= (this.state.lines[lastLine] || "").length;
+	}
+
 	private isOnLastVisualLine(): boolean {
 		const visualLines = this.buildVisualLineMap(this.lastWidth);
 		const currentVisualLine = this.findCurrentVisualLine(visualLines);
@@ -854,6 +860,13 @@ export class Editor implements Component, Focusable {
 		if (kb.matches(data, "submit")) {
 			if (this.disableSubmit) return;
 
+			// Accept ghost text and submit in one keystroke
+			if (this.ghostText) {
+				this.acceptGhostText();
+				this.submitValue();
+				return;
+			}
+
 			// Workaround for terminals without Shift+Enter support:
 			// If char before cursor is \, delete it and insert newline instead of submitting.
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -893,6 +906,11 @@ export class Editor implements Component, Focusable {
 			return;
 		}
 		if (kb.matches(data, "cursorRight")) {
+			// Accept ghost text on Arrow Right when cursor is at end of text
+			if (this.ghostText && this.isCursorAtEnd()) {
+				this.acceptGhostText();
+				return;
+			}
 			this.moveCursor(0, 1);
 			return;
 		}
